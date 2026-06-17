@@ -57,17 +57,17 @@ const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const sbH={'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 
 async function sbFetch(path,opts={}){
-  const r=await fetch(SB_URL+'/rest/v1/'+path,{headers:{...sbH,...(opts.headers||{})},method:opts.method||'GET',body:opts.body});
+  const r=await fetch(SB_URL+'/rest/v1/'+path,{headers:Object.assign({},sbH,opts.headers||{}),method:opts.method||'GET',body:opts.body});
   if(!r.ok)throw new Error(await r.text());
   const txt=await r.text();return txt?JSON.parse(txt):[];
 }
 
 async function loadFromSupabase(){
   try{
-    const[recs,days]=await Promise.all([sbFetch('recipes?select=*&order=id'),sbFetch('planning?select=*')]);
+    var sbResults=await Promise.all([sbFetch('recipes?select=*&order=id'),sbFetch('planning?select=*')]);var recs=sbResults[0];var days=sbResults[1];
     const recipes=recs.length>0?recs.map(r=>r.data):null;
     const planning={};
-    days.forEach(d=>{planning[d.day_key]={...(d.midi?{midi:d.midi}:{}),..( d.soir?{soir:d.soir}:{})};});
+    days.forEach(function(d){var entry={};if(d.midi)entry.midi=d.midi;if(d.soir)entry.soir=d.soir;planning[d.day_key]=entry;});
     return{recipes,planning:Object.keys(planning).length>0?planning:null};
   }catch(e){console.warn('Supabase load error:',e);return{recipes:null,planning:null};}
 }
@@ -75,7 +75,7 @@ async function loadFromSupabase(){
 async function saveRecipesToSupabase(recipes){
   try{
     await sbFetch('recipes',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates'},
-      body:JSON.stringify(recipes.map(r=>({id:r.id,data:r,updated_at:new Date().toISOString()})))});
+      body:JSON.stringify(recipes.map(function(r){return{id:r.id,data:r,updated_at:new Date().toISOString()};}))});
   }catch(e){console.warn('SB save recipes:',e);}
 }
 
@@ -130,7 +130,7 @@ function el(tag,props,...children){
       else if(k!=='key')e.setAttribute(k,v);
     });
   }
-  children.flat(Infinity).forEach(c=>{
+  var flat=[];(function fl(a){a.forEach(function(x){Array.isArray(x)?fl(x):flat.push(x);});})(children);flat.forEach(function(c){
     if(c==null||c===false||c===undefined)return;
     e.appendChild(typeof c==='string'||typeof c==='number'?document.createTextNode(String(c)):c);
   });
@@ -267,7 +267,7 @@ function renderDataModal(){
 }
 
 function renderHeader(){
-  const {view}=_state;
+  var view=_state.view;
   const today=new Date();
   const wk=weekDays(_state.wkDate);
   const title=view==='month'?`${MONTHS[_state.curMonth]} ${_state.curYear}`:
@@ -323,7 +323,7 @@ function renderHeader(){
 }
 
 function renderMonthView(){
-  const {curYear:y,curMonth:m,planning,recipes}=_state;
+  var y=_state.curYear;var m=_state.curMonth;var planning=_state.planning;var recipes=_state.recipes;
   const today=new Date();
   const fd=dow(new Date(y,m,1));
   const dim=new Date(y,m+1,0).getDate();
@@ -377,7 +377,7 @@ function renderMonthView(){
 }
 
 function renderWeekView(){
-  const {wkDate,planning,recipes}=_state;
+  var wkDate=_state.wkDate;var planning=_state.planning;var recipes=_state.recipes;
   const days=weekDays(wkDate);
   const wrap=div({padding:'0 10px 20px'});
   const grid=div({display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'5px'});
@@ -429,7 +429,7 @@ function renderWeekView(){
 }
 
 function renderRecipesView(){
-  const {recipes}=_state;
+  var recipes=_state.recipes;
   let search='',filter='all';
   const wrap=div({padding:'0 10px 20px'});
 
@@ -494,8 +494,8 @@ function renderRecipesView(){
 // ── MODALS ────────────────────────────────────────────────────────────────
 
 function renderDayModal(){
-  const {modal,planning,recipes}=_state;
-  const {dateKey,date}=modal;
+  var modal=_state.modal;var planning=_state.planning;var recipes=_state.recipes;
+  var dateKey=modal.dateKey;var date=modal.date;
   const dp=planning[dateKey]||{};
   const mR=getRecipe(dp.midi);
   const sR=getRecipe(dp.soir);
@@ -546,8 +546,8 @@ function renderDayModal(){
 }
 
 function renderAssignModal(){
-  const {modal,planning,recipes}=_state;
-  const {dateKey,slot,date}=modal;
+  var modal=_state.modal;var planning=_state.planning;var recipes=_state.recipes;
+  var dateKey=modal.dateKey;var slot=modal.slot;var date=modal.date;
   const cur=(planning[dateKey]||{})[slot];
   let search='';
 
@@ -608,8 +608,8 @@ function renderAssignModal(){
 }
 
 function renderRecipeModal(){
-  const {modal}=_state;
-  const {recipe,fromDay}=modal;
+  var modal=_state.modal;
+  var recipe=modal.recipe;var fromDay=modal.fromDay;
   const overlay=div({});overlay.className='overlay';
   overlay.addEventListener('click',()=>setState({modal:fromDay?{type:'day',...fromDay}:null}));
   const sheet=div({});sheet.className='sheet';sheet.style.maxWidth='640px';
@@ -664,7 +664,7 @@ function renderRecipeModal(){
 }
 
 function renderFormModal(){
-  const {modal,recipes}=_state;
+  var modal=_state.modal;var recipes=_state.recipes;
   const rec=modal.recipe;
   let form=rec?{...rec,ingredients:[...rec.ingredients],steps:[...rec.steps]}:
     {id:'',name:'',type:'both',ingredients:[''],steps:[''],image:'',servings:2,prep:10,cook:20};
@@ -793,8 +793,8 @@ render();
 // 2. Then load from Supabase in background and update if different
 (async()=>{
   setState({syncing:true});
-  const{recipes,planning}=await loadFromSupabase();
-  const updates={syncing:false};
+  var sbData=await loadFromSupabase();var recipes=sbData.recipes;var planning=sbData.planning;
+  var updates={syncing:false};
   if(recipes)updates.recipes=recipes;
   if(planning)updates.planning=planning;
   if(recipes)saveLocal('rp_rec',recipes);
