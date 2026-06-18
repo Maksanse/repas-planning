@@ -415,7 +415,6 @@ function renderRecipesView(){
   var recipes=_state.recipes;
   var tags=_state.tags;
   var search='';
-  var activeTagId=null;
   var wrap=div({padding:'0 10px 20px'});
 
   // Top row
@@ -428,69 +427,102 @@ function renderRecipesView(){
   topRow.appendChild(addBtn);
   wrap.appendChild(topRow);
 
-  // ── Filtres lisibles groupés par catégorie ──
+  // ── Filtres : barre de groupes + sous-catégories ──
   var filterWrap=div({marginBottom:'16px'});
   var groups={};
   tags.forEach(function(t){if(!groups[t.group_name])groups[t.group_name]=[];groups[t.group_name].push(t);});
-
-  // Ligne "Toutes" + bouton gérer
-  var topFilterRow=div({display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'});
-  var allBtn=btn({padding:'5px 14px',borderRadius:'20px',fontSize:'12px',fontWeight:'700',background:'#d4836a',color:'white',cursor:'pointer',border:'2px solid #d4836a'},
-    function(){activeTagId=null;refreshFilters();refreshList();},'Toutes les recettes');
-  topFilterRow.appendChild(allBtn);
-  topFilterRow.appendChild(btn({fontSize:'11px',color:'#9e9b94',fontWeight:'600',cursor:'pointer',border:'none',background:'none',display:'flex',alignItems:'center',gap:'3px'},
-    function(){setState({modal:{type:'manageTags'}});},icon('edit',11,'#9e9b94'),'Gérer'));
-  filterWrap.appendChild(topFilterRow);
-
-  // Un bloc par groupe
+  var groupNames=['Toutes'].concat(Object.keys(groups));
+  var activeGroup='Toutes';
+  var activeTagId=null;
   var tagBtns=[];
-  Object.keys(groups).forEach(function(grp){
-    var grpBlock=div({
-      background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.07)',
-      padding:'10px 12px',marginBottom:'6px'
+
+  // ── Barre des groupes (scrollable horizontalement) ──
+  var groupBar=div({
+    display:'flex',gap:'6px',overflowX:'auto',paddingBottom:'8px',marginBottom:'8px',
+    msOverflowStyle:'none',scrollbarWidth:'none'
+  });
+  // Cacher scrollbar webkit
+  var styleEl=document.createElement('style');
+  styleEl.textContent='.grpbar::-webkit-scrollbar{display:none}';
+  document.head.appendChild(styleEl);
+  groupBar.className='grpbar';
+
+  var groupBtns=[];
+  groupNames.forEach(function(grp){
+    var isAll=grp==='Toutes';
+    var gb=btn({
+      padding:'7px 14px',borderRadius:'20px',fontSize:'12px',fontWeight:'700',
+      background:isAll?'#d4836a':'#fff',
+      color:isAll?'white':'#6b6860',
+      border:'1.5px solid '+(isAll?'#d4836a':'rgba(0,0,0,0.10)'),
+      cursor:'pointer',flexShrink:'0',transition:'all .15s',whiteSpace:'nowrap'
+    },function(){
+      activeGroup=grp;
+      activeTagId=null;
+      refreshGroupBar();
+      refreshSubTags();
+      refreshList();
+    },grp);
+    gb.dataset.grp=grp;
+    groupBtns.push(gb);
+    groupBar.appendChild(gb);
+  });
+
+  // Bouton gérer tout à droite
+  groupBar.appendChild(btn({
+    padding:'7px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:'600',
+    background:'#f0efe9',color:'#9e9b94',border:'1.5px solid rgba(0,0,0,0.08)',
+    cursor:'pointer',flexShrink:'0',display:'flex',alignItems:'center',gap:'3px'
+  },function(){setState({modal:{type:'manageTags'}});},icon('edit',11,'#9e9b94'),'Gérer'));
+
+  filterWrap.appendChild(groupBar);
+
+  // ── Zone sous-catégories (change selon groupe actif) ──
+  var subTagsWrap=div({
+    display:'flex',gap:'6px',flexWrap:'wrap',
+    minHeight:'32px',padding:'2px 0',marginBottom:'4px'
+  });
+  filterWrap.appendChild(subTagsWrap);
+  wrap.appendChild(filterWrap);
+
+  function refreshGroupBar(){
+    groupBtns.forEach(function(gb){
+      var active=gb.dataset.grp===activeGroup;
+      gb.style.background=active?'#d4836a':'#fff';
+      gb.style.color=active?'white':'#6b6860';
+      gb.style.border='1.5px solid '+(active?'#d4836a':'rgba(0,0,0,0.10)');
     });
-    // Titre du groupe
-    grpBlock.appendChild(txt('p',{
-      fontSize:'10px',fontWeight:'800',color:'#9e9b94',
-      textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'8px'
-    },grp));
-    // Tags du groupe
-    var pillsRow=div({display:'flex',gap:'5px',flexWrap:'wrap'});
-    groups[grp].forEach(function(t){
+  }
+
+  function refreshSubTags(){
+    subTagsWrap.innerHTML='';
+    tagBtns=[];
+    if(activeGroup==='Toutes')return; // pas de sous-tags pour "Toutes"
+    var groupTags=groups[activeGroup]||[];
+    groupTags.forEach(function(t){
+      var active=activeTagId===t.id;
       var b=btn({
         display:'flex',alignItems:'center',gap:'5px',
-        padding:'5px 11px',borderRadius:'8px',fontSize:'12px',fontWeight:'600',
-        background:'#f5f4f0',color:'#1a1917',
-        border:'1.5px solid rgba(0,0,0,0.08)',cursor:'pointer',
-        transition:'all .12s'
-      },function(){activeTagId=activeTagId===t.id?null:t.id;refreshFilters();refreshList();});
-      // Petit rond coloré + label texte
-      var dot=div({width:'8px',height:'8px',borderRadius:'50%',background:t.color,flexShrink:'0'});
+        padding:'5px 12px',borderRadius:'8px',fontSize:'12px',fontWeight:'600',
+        background:active?t.color:'#f5f4f0',
+        color:active?'white':'#1a1917',
+        border:'1.5px solid '+(active?t.color:'rgba(0,0,0,0.08)'),
+        cursor:'pointer',transition:'all .12s'
+      },function(){
+        activeTagId=activeTagId===t.id?null:t.id;
+        refreshSubTagBtns();
+        refreshList();
+      });
+      var dot=div({width:'7px',height:'7px',borderRadius:'50%',background:active?'rgba(255,255,255,0.8)':t.color,flexShrink:'0'});
       b.appendChild(dot);
       b.appendChild(document.createTextNode(t.label));
       b.dataset.tagId=t.id;
       tagBtns.push(b);
-      pillsRow.appendChild(b);
+      subTagsWrap.appendChild(b);
     });
-    grpBlock.appendChild(pillsRow);
-    filterWrap.appendChild(grpBlock);
-  });
-
-  if(tags.length===0){
-    var emptyTags=div({background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.07)',padding:'14px',textAlign:'center'});
-    emptyTags.appendChild(txt('p',{fontSize:'12px',color:'#9e9b94'},'Aucune catégorie — cliquez sur Gérer pour en créer'));
-    filterWrap.appendChild(emptyTags);
   }
 
-  wrap.appendChild(filterWrap);
-
-  function refreshFilters(){
-    // Bouton "Toutes"
-    var allActive=activeTagId===null;
-    allBtn.style.background=allActive?'#d4836a':'transparent';
-    allBtn.style.color=allActive?'white':'#6b6860';
-    allBtn.style.border='2px solid '+(allActive?'#d4836a':'rgba(0,0,0,0.12)');
-    // Tags individuels
+  function refreshSubTagBtns(){
     tagBtns.forEach(function(b){
       var tid=parseInt(b.dataset.tagId);
       var tag=tags.find(function(t){return t.id===tid;});
@@ -499,11 +531,18 @@ function renderRecipesView(){
       b.style.background=active?tag.color:'#f5f4f0';
       b.style.color=active?'white':'#1a1917';
       b.style.border='1.5px solid '+(active?tag.color:'rgba(0,0,0,0.08)');
-      // Le rond coloré reste visible dans tous les cas
       var dot=b.querySelector('div');
-      if(dot)dot.style.background=active?'white':tag.color;
+      if(dot)dot.style.background=active?'rgba(255,255,255,0.8)':tag.color;
     });
   }
+
+  function refreshFilters(){
+    refreshGroupBar();
+    refreshSubTagBtns();
+  }
+
+  // Init sous-tags
+  refreshSubTags();
 
   var list=div({display:'flex',flexDirection:'column',gap:'7px'});
   wrap.appendChild(list);
